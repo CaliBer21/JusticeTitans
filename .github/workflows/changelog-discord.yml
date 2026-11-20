@@ -1,15 +1,15 @@
-name: Update Changelog & Notify Discord
+name: Send Legal Database Changelog to Discord
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'Legal Database Changelog'
 
 jobs:
-  changelog_and_notify:
+  notify_discord:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout repository
@@ -17,48 +17,25 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Update CHANGELOG.md
-        run: |
-          DATE=$(date +'%Y-%m-%d')
-          COMMIT_MSG=$(git log -1 --pretty=%s)
-          COMMIT_HASH=$(git rev-parse --short HEAD)
-          COMMIT_URL="${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
-
-          NEW_ENTRY="## [${COMMIT_HASH}] - ${DATE}\n- ${COMMIT_MSG} ([view commit](${COMMIT_URL}))\n"
-
-          if [ -f CHANGELOG.md ]; then
-            awk -v entry="$NEW_ENTRY" '
-              NR==1 { print; print ""; printf "%b", entry; next }
-              { print }
-            ' CHANGELOG.md > CHANGELOG.tmp && mv CHANGELOG.tmp CHANGELOG.md
-          else
-            printf "# Changelog\n\n%b" "$NEW_ENTRY" > CHANGELOG.md
-          fi
-
-      - name: Commit and push CHANGELOG.md
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet CHANGELOG.md; then
-            echo "No changelog changes to commit."
-          else
-            git add CHANGELOG.md
-            git commit -m "docs: update CHANGELOG.md [skip ci]"
-            git push
-          fi
-
-      - name: Send notification to Discord
+      - name: Extract new changelog lines & send to Discord
         env:
           WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          COMMIT_MSG=$(git log -1 --pretty=%s)
-          AUTHOR=$(git log -1 --pretty=%an)
+          # Pairnei mono tis grammes pou prostethikan (+) sto teleftaio commit
+          ADDED_LINES=$(git diff HEAD~1 HEAD -- "Legal Database Changelog" | grep '^+' | grep -v '^+++' | sed 's/^+//')
+
+          # An den prostethike kati neo, stamataei
+          if [ -z "$ADDED_LINES" ]; then
+            echo "No new lines added."
+            exit 0
+          fi
+
           COMMIT_URL="${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
 
           PAYLOAD=$(jq -n \
-            --arg content "📢 **Νέο Update στο \`${{ github.repository }}\`**" \
-            --arg title "Αλλαγή από ${AUTHOR}" \
-            --arg desc "**Commit:** ${COMMIT_MSG}\n[Δες το commit στο GitHub](${COMMIT_URL})" \
+            --arg content "📢 **Νέο Update — Legal Database Changelog**" \
+            --arg title "Τι άλλαξε:" \
+            --arg desc "${ADDED_LINES}"$'\n\n'"[Δες την αλλαγή στο GitHub](${COMMIT_URL})" \
             '{
               content: $content,
               embeds: [{
